@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>HH Resume Matcher</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>Ваши резюме</h1>
+    <p class="hint">Расширение берёт резюме прямо из вашего аккаунта hh и обновляет их при каждом открытии вакансии — правки на hh видны сразу.</p>
+  </header>
+
+  <label class="toggle">
+    <input id="syncOn" type="checkbox" checked>
+    <span>Подтягивать резюме из аккаунта hh</span>
+  </label>
+
+  <ul id="list" class="list" aria-live="polite"></ul>
+
+  <div class="meta">
+    <span id="synced"></span>
+    <button id="refresh" class="link">Обновить сейчас</button>
+  </div>
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+
+  <details id="manualBox">
+    <summary>Добавить резюме вручную</summary>
+    <p class="hint small">Например, черновик, которого ещё нет на hh. Оно будет сравниваться вместе с остальными.</p>
+    <textarea id="resume" spellcheck="false" placeholder="Вставьте текст резюме"></textarea>
+    <div class="meta"><span id="count">0 символов</span><span id="mstatus" role="status"></span></div>
+    <div class="actions">
+      <button id="save" class="primary">Сохранить</button>
+      <label class="file">Загрузить .txt<input id="file" type="file" accept=".txt,.md,text/plain"></label>
+      <button id="clear" class="ghost">Удалить</button>
+    </div>
+  </details>
+
+  <script src="popup.js"></script>
+</body>
+</html>

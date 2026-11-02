@@ -1,0 +1,89 @@
+{
+  "manifest_version": 3,
+  "name": "HH Resume Matcher",
+  "version": "1.6.0",
+  "description": "Сравнивает все ваши резюме с вакансией на hh.ru и показывает, каким лучше откликнуться.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://api.hh.ru/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "HH Resume Matcher",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.hh.ru/vacancy/*",
+        "*://*.hh.kz/vacancy/*",
+        "*://*.hh.uz/vacancy/*",
+        "*://*.rabota.by/vacancy/*"
+      ],
+      "js": [
+        "skills.js",
+        "matcher.js",
+        "hh-sync.js",
+        "vacancy-parse.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.hh.ru/applicant/resumes*",
+        "*://*.hh.kz/applicant/resumes*",
+        "*://*.hh.uz/applicant/resumes*",
+        "*://*.rabota.by/applicant/resumes*"
+      ],
+      "js": [
+        "resume-list.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.hh.ru/resume/*",
+        "*://*.hh.kz/resume/*",
+        "*://*.hh.uz/resume/*",
+        "*://*.rabota.by/resume/*"
+      ],
+      "js": [
+        "hh-sync.js",
+        "resume-page.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.hh.ru/search/vacancy*",
+        "*://*.hh.kz/search/vacancy*",
+        "*://*.hh.uz/search/vacancy*",
+        "*://*.rabota.by/search/vacancy*"
+      ],
+      "js": [
+        "skills.js",
+        "matcher.js",
+        "hh-sync.js",
+        "vacancy-parse.js",
+        "apply.js",
+        "autoapply.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
