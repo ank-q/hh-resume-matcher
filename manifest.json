@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "HH Resume Matcher",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Сравнивает все ваши резюме с вакансией на hh.ru и показывает, каким лучше откликнуться.",
   "permissions": [
     "storage"

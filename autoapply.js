@@ -48,13 +48,43 @@
   }
 
   // ---------- хранилище ----------
+  function searchKey() {
+    const u = new URL(location.href);
+    u.searchParams.delete('page');
+    u.hash = '';
+    return u.toString();
+  }
+
   async function load() {
-    const { hhmAuto, hhmApplyLog, hhmAutoMin } = await chrome.storage.local.get(['hhmAuto', 'hhmApplyLog', 'hhmAutoMin']);
+    const { hhmAuto, hhmApplyLog, hhmAutoMin, hhmAutoDraft } = await chrome.storage.local.get(['hhmAuto', 'hhmApplyLog', 'hhmAutoMin', 'hhmAutoDraft']);
     st.settings = { ...DEFAULTS, ...(hhmAuto || {}) };
     st.log = hhmApplyLog || [];
     st.minimized = !!hhmAutoMin;
+    if (hhmAutoDraft && hhmAutoDraft.key === searchKey() && Date.now() - hhmAutoDraft.ts < 24 * 60 * 60 * 1000 && Array.isArray(hhmAutoDraft.items)) {
+      st.items = hhmAutoDraft.items.filter((it) => it && it.id && it.title).map((it) => ({
+        ...it,
+        matched: Array.isArray(it.matched) ? it.matched : [],
+        missing: Array.isArray(it.missing) ? it.missing : [],
+        checked: it.checked !== false,
+        status: ['sending', 'captcha'].includes(it.status) ? '' : (it.status || '')
+      }));
+      st.found = st.items.length;
+      if (st.items.length) st.phase = `Восстановлен список: ${st.items.length} вакансий.`;
+    }
   }
   const saveSettings = () => chrome.storage.local.set({ hhmAuto: st.settings });
+  const saveDraft = async () => {
+    try {
+      await chrome.storage.local.set({ hhmAutoDraft: { key: searchKey(), ts: Date.now(), items: st.items } });
+    } catch (_) { /* сохранение черновика не должно останавливать поиск или отклики */ }
+  };
+  async function clearDraft() {
+    st.items = [];
+    st.found = 0;
+    st.phase = 'Сохранённый список очищен.';
+    await chrome.storage.local.remove('hhmAutoDraft');
+    render();
+  }
   async function addLog(entry) {
     st.log.unshift({ ts: Date.now(), ...entry });
     st.log = st.log.slice(0, 1000);
@@ -230,6 +260,7 @@
     it.status = res.status;
     it.detail = res.detail;
     await addLog({ id: it.id, title: it.title, company: it.company, resumeTitle: it.resumeTitle, score: it.score, status: res.status, detail: res.detail, raw: res.raw });
+    await saveDraft();
     if (res.ok) { st.sent++; errorsInRow = 0; }
     renderList(); renderStatus();
     if (res.status === 'limit' || res.status === 'captcha') { st.phase = res.detail + '. Остановлено.'; return false; }
@@ -254,6 +285,7 @@
     const auto = st.settings.mode === 'auto';
     if (auto && !confirm(`Автоматически откликаться на вакансии с совпадением от ${st.settings.threshold}%?\nЛимит на сегодня: ${st.settings.dailyLimit} (уже отправлено ${sentToday()}).`)) return;
     Object.assign(st, { running: true, stop: false, checked: 0, found: 0, sent: 0, items: [], phase: '' });
+    await saveDraft();
     errorsInRow = 0;
     render();
     try {
@@ -286,6 +318,8 @@
             st.found++;
             st.items.push(ev.item);
             renderList();
+            updateSelectionUi();
+            await saveDraft();
             if (auto) {
               if (lastApply && !(await delayBetweenApplies())) break outer;
               if (!(await applyOne(ev.item))) { st.stop = true; break outer; }
@@ -305,6 +339,7 @@
       st.phase = 'Ошибка: ' + (e.message || e);
     }
     st.running = false;
+    await saveDraft();
     render();
   }
 
@@ -323,6 +358,7 @@
     }
     if (!st.phase.includes('Остановлено')) st.phase = st.stop ? 'Остановлено.' : `Готово. Отправлено откликов: ${st.sent}.`;
     st.running = false;
+    await saveDraft();
     render();
   }
 
@@ -367,6 +403,12 @@
     .ghost { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 8px; padding: 9px 12px; font-weight: 600; }
     .status { padding: 0 14px 8px; font-size: 12px; color: var(--muted); }
     .status b { color: var(--ink); font-variant-numeric: tabular-nums; }
+    .bulk { display: flex; align-items: center; gap: 8px; padding: 0 14px 8px; color: var(--muted); font-size: 12px; }
+    .bulk span { margin-right: auto; }
+    .bulk button { border: 0; background: none; padding: 2px 0; color: var(--accent); font-size: 12px; }
+    .bulk button:hover { text-decoration: underline; }
+    .bulk button:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+    .bulk .clear { color: var(--bad); }
     .list { list-style: none; margin: 0; padding: 0 8px; overflow: auto; flex: 1; min-height: 0; border-top: 1px solid var(--line); }
     .it { display: flex; gap: 8px; padding: 8px 6px; border-bottom: 1px solid var(--line); align-items: flex-start; }
     .it input { margin-top: 3px; accent-color: var(--accent); }
@@ -411,6 +453,11 @@
   const STATUS_TEXT = { sent: 'Отклик отправлен', sending: 'Отправляю…', already: 'Уже откликались', test: 'Нужен тест — откликнитесь вручную', letter: 'Нужно письмо — включите шаблон письма', limit: 'Лимит hh', captcha: 'Ждёт проверки hh', skipped: 'Пропущено', error: 'Ошибка' };
 
   function render() {
+    const view = root ? {
+      scrollTop: root.getElementById('list')?.scrollTop || 0,
+      rulesOpen: !!root.querySelector('details.rules')?.open,
+      logOpen: !!root.querySelector('.bottom details')?.open
+    } : null;
     ensureHost();
     const s = st.settings;
     if (st.minimized) {
@@ -423,6 +470,7 @@
     }
     const auto = s.mode === 'auto';
     const dis = st.running ? 'disabled' : '';
+    const selected = st.items.filter((i) => i.checked && !['sent', 'already', 'test'].includes(i.status)).length;
     root.innerHTML = `<style>${CSS}</style>
     <div class="p" role="region" aria-label="Автоотклики">
       <div class="top"><h2>Автоотклики</h2><button class="x" id="min" aria-label="Свернуть">–</button></div>
@@ -453,17 +501,32 @@
         ${st.running
           ? '<button class="primary" id="stop">Остановить</button>'
           : `<button class="primary" id="go">${auto ? 'Запустить автоотклики' : 'Найти подходящие'}</button>
-             ${!auto && st.items.some((i) => i.checked && !['sent', 'already', 'test'].includes(i.status)) ? `<button class="ghost" id="apply">Откликнуться (${st.items.filter((i) => i.checked && !['sent', 'already', 'test'].includes(i.status)).length})</button>` : ''}`}
+             ${!auto ? `<button class="ghost" id="apply" ${selected ? '' : 'hidden'}>Откликнуться (${selected})</button>` : ''}`}
       </div>
       <div class="status" id="status"></div>
+      <div class="bulk" id="bulk" ${auto || !st.items.length ? 'hidden' : ''}>
+        <span id="selected-count"></span>
+        <button id="select-all" type="button" ${dis}>Выбрать все</button>
+        <button id="select-none" type="button" ${dis}>Снять все</button>
+        <button id="clear-results" class="clear" type="button" ${dis}>Очистить</button>
+      </div>
       <ul class="list" id="list"></ul>
       <div class="bottom" id="bottom"></div>
     </div>`;
     bind();
     renderStatus();
     renderList();
+    updateSelectionUi();
     renderBottom();
     renderCaptcha();
+    if (view) {
+      const list = root.getElementById('list');
+      const rules = root.querySelector('details.rules');
+      const log = root.querySelector('.bottom details');
+      if (list) list.scrollTop = view.scrollTop;
+      if (rules) rules.open = view.rulesOpen;
+      if (log) log.open = view.logOpen;
+    }
   }
 
   function renderStatus() {
@@ -477,6 +540,7 @@
   function renderList() {
     const el = root && root.getElementById('list');
     if (!el) return;
+    const scrollTop = el.scrollTop;
     if (!st.items.length) { el.innerHTML = ''; return; }
     const semi = st.settings.mode === 'semi';
     el.innerHTML = st.items.map((it, i) => `<li class="it">
@@ -490,8 +554,26 @@
       </div></li>`).join('');
     el.querySelectorAll('input[data-i]').forEach((cb) => cb.addEventListener('change', () => {
       st.items[+cb.dataset.i].checked = cb.checked;
-      render();
+      updateSelectionUi();
+      void saveDraft();
     }));
+    el.scrollTop = scrollTop;
+  }
+
+  function updateSelectionUi() {
+    if (!root) return;
+    const semi = st.settings.mode === 'semi';
+    const available = st.items.filter((i) => !['sent', 'already', 'test'].includes(i.status));
+    const selected = available.filter((i) => i.checked).length;
+    const bulk = root.getElementById('bulk');
+    if (bulk) bulk.hidden = !semi || !st.items.length;
+    const count = root.getElementById('selected-count');
+    if (count) count.textContent = `Выбрано ${selected} из ${available.length}`;
+    const apply = root.getElementById('apply');
+    if (apply) {
+      apply.hidden = !selected;
+      apply.textContent = `Откликнуться (${selected})`;
+    }
   }
 
   function renderBottom() {
@@ -572,6 +654,17 @@
     if ($('go')) $('go').addEventListener('click', run);
     if ($('stop')) $('stop').addEventListener('click', () => { st.stop = true; st.phase = 'Останавливаю…'; renderStatus(); if (captchaResolve) closeCaptcha('stop'); });
     if ($('apply')) $('apply').addEventListener('click', applySelected);
+    if ($('select-all')) $('select-all').addEventListener('click', () => {
+      st.items.forEach((it) => { if (!['sent', 'already', 'test'].includes(it.status)) it.checked = true; });
+      renderList(); updateSelectionUi(); void saveDraft();
+    });
+    if ($('select-none')) $('select-none').addEventListener('click', () => {
+      st.items.forEach((it) => { if (!['sent', 'already', 'test'].includes(it.status)) it.checked = false; });
+      renderList(); updateSelectionUi(); void saveDraft();
+    });
+    if ($('clear-results')) $('clear-results').addEventListener('click', () => {
+      if (confirm('Очистить найденные вакансии?')) void clearDraft();
+    });
   }
 
   load().then(render);
